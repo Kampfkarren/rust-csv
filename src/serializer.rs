@@ -185,11 +185,7 @@ impl<'a, 'w, W: io::Write> Serializer for &'a mut SeRecord<'w, W> {
         self,
         _len: Option<usize>,
     ) -> Result<Self::SerializeMap, Self::Error> {
-        // The right behavior for serializing maps isn't clear.
-        Err(Error::custom(
-            "serializing maps is not supported, \
-             if you have a use case, please file an issue at \
-             https://github.com/BurntSushi/rust-csv"))
+        Ok(self)
     }
 
     fn serialize_struct(
@@ -283,18 +279,18 @@ impl<'a, 'w, W: io::Write> SerializeMap for &'a mut SeRecord<'w, W> {
         &mut self,
         _key: &T,
     ) -> Result<(), Self::Error> {
-        unreachable!()
+        Ok(())
     }
 
     fn serialize_value<T: ?Sized + Serialize>(
         &mut self,
-        _value: &T,
+        value: &T,
     ) -> Result<(), Self::Error> {
-        unreachable!()
+        value.serialize(&mut **self)
     }
 
     fn end(self) -> Result<Self::Ok, Self::Error> {
-        unreachable!()
+        Ok(())
     }
 }
 
@@ -1254,5 +1250,58 @@ mod tests {
         let (wrote, got) = serialize_header(row.clone());
         assert!(wrote);
         assert_eq!(got, "label,num,label2,value,empty,label,num");
+    }
+
+    #[test]
+    fn struct_flatten() {
+        #[derive(Serialize)]
+        struct Foo {
+            label: String,
+            #[serde(flatten)]
+            bar: Bar,
+        };
+        #[derive(Serialize)]
+        struct Bar {
+            value: u64,
+        };
+
+        let got = serialize(Foo {
+            label: "doge".to_string(),
+            bar: Bar {
+                value: 1,
+            },
+        });
+        assert_eq!(got, "doge,1\n");
+    }
+
+    #[test]
+    fn struct_nested_flattens() {
+        #[derive(Serialize)]
+        struct Foo {
+            label: String,
+            #[serde(flatten)]
+            bar: Bar,
+            #[serde(flatten)]
+            baz: Baz,
+        };
+        #[derive(Serialize)]
+        struct Bar {
+            value: u64,
+        };
+        #[derive(Serialize)]
+        struct Baz {
+            value: u64,
+        };
+
+        let got = serialize(Foo {
+            label: "doge".to_string(),
+            bar: Bar {
+                value: 1,
+            },
+            baz: Baz {
+                value: 2,
+            },
+        });
+        assert_eq!(got, "doge,1,2\n");
     }
 }
